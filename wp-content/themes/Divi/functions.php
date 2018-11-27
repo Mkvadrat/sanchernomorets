@@ -163,6 +163,7 @@ function et_divi_load_scripts_styles(){
 
 	wp_enqueue_script( 'et-jquery-touch-mobile', $template_dir . '/includes/builder/scripts/jquery.mobile.custom.min.js', array( 'jquery' ), $theme_version, true );
 	wp_enqueue_script( 'divi-custom-script', $template_dir . '/js/custom.js', $dependencies_array , $theme_version, true );
+	wp_enqueue_script( 'divi-reviews-script', $template_dir . '/js/reviews.js', $dependencies_array , $theme_version, true );
 
 	if ( 'on' === et_get_option( 'divi_smooth_scroll', false ) ) {
 		wp_enqueue_script( 'smooth-scroll', $template_dir . '/js/smoothscroll.js', array( 'jquery' ), $theme_version, true );
@@ -8607,3 +8608,222 @@ function et_get_footer_credits() {
 	return et_get_safe_localization( sprintf( $credits_format, $footer_credits ) );
 }
 endif;
+
+/**********************************************************************************************************************************************************
+***********************************************************************************************************************************************************
+****************************************************************************ОТЗЫВЫ*************************************************************************
+***********************************************************************************************************************************************************
+***********************************************************************************************************************************************************/
+//shortcode send form
+function reviews_form( $atts ) {
+	$current_user = wp_get_current_user();
+	$replytoid = isset($_GET['replytocom']) ? (int) $_GET['replytocom'] : 0;
+	return $output =
+	'<form id="commentform">
+		<div class="respond"></div>
+		<div class="text-inputs">
+			<input type="text" name="author" id="author" value="' . $current_user->user_login . '" placeholder="Ваше имя">                       
+			<input type="text" name="email" id="email" value="' . $current_user->user_email . '" placeholder="Ваш email">
+		</div>
+		<div class="text-field">                   
+			<textarea name="comment" id="comment" rows="7" placeholder="Текст отзыва"></textarea>
+		</div>
+		<input type="hidden" name="comment_post_ID" value="' . get_the_ID() . '" id="comment_post_ID" />
+		<input type="hidden" name="comment_parent" id="comment_parent" value="' . $replytoid . '" />
+    </form>
+	<div class="accept">
+		<input type="checkbox" name="" id="confirm">
+		<label for="confirm"><span class="check-arrow"></span>я согласен (согласна) с политикой конфиденциальности</label>
+		<button type="submit" onclick="submit();" class="greenbutton" disabled>Отправить</button>
+    </div>
+	<script language="javascript">
+		function submit(){
+			jQuery(document).ready(function($){
+				$("#commentform").submit();
+			});
+		}
+		jQuery(document).ready(function($){
+			$(".accept label").on("click", function(){
+			$(".check-arrow").toggle();
+			return Attreb();
+			});
+			function Attreb() {
+				return ($(".accept input").prop("checked")) ? $(".accept button").attr("disabled", true) : $(".accept button").attr("disabled", false);
+			}
+		});
+    </script>';
+}
+add_shortcode( 'reviews_form', 'reviews_form' );
+
+//Ajax функция добавления комментариев
+function true_add_ajax_comment(){
+	global $wpdb;
+	$comment_post_ID = isset($_POST['comment_post_ID']) ? (int) $_POST['comment_post_ID'] : 0;
+
+	$post = get_post($comment_post_ID);
+
+	if ( empty($post->comment_status) ) {
+		do_action('comment_id_not_found', $comment_post_ID);
+		exit;
+	}
+
+	$status = get_post_status($post);
+
+	$status_obj = get_post_status_object($status);
+
+	if ( !comments_open($comment_post_ID) ) {
+		do_action('comment_closed', $comment_post_ID);
+		wp_die( __('Sorry, comments are closed for this item.') );
+	} elseif ( 'trash' == $status ) {
+		do_action('comment_on_trash', $comment_post_ID);
+		exit;
+	} elseif ( !$status_obj->public && !$status_obj->private ) {
+		do_action('comment_on_draft', $comment_post_ID);
+		exit;
+	} elseif ( post_password_required($comment_post_ID) ) {
+		do_action('comment_on_password_protected', $comment_post_ID);
+		exit;
+	} else {
+		do_action('pre_comment_on_post', $comment_post_ID);
+	}
+
+	$comment_author       = ( isset($_POST['author']) )  ? trim(strip_tags($_POST['author'])) : null;
+	$comment_author_email = ( isset($_POST['email']) )   ? trim($_POST['email']) : null;
+	$comment_content      = ( isset($_POST['comment']) ) ? trim($_POST['comment']) : null;
+
+	$error_comment = array();
+
+	$user = wp_get_current_user();
+	if ( $user->exists() ) {
+		if ( empty( $user->display_name ) )
+		$user->display_name=$user->user_login;
+		$comment_author       = $wpdb->escape($user->display_name);
+		$comment_author_email = $wpdb->escape($user->user_email);
+		
+		$user_ID = get_current_user_id();
+		if ( current_user_can('unfiltered_html') ) {
+			if ( wp_create_nonce('unfiltered-html-comment_' . $comment_post_ID) != $_POST['_wp_unfiltered_html_comment'] ) {
+				kses_remove_filters(); // start with a clean slate
+				kses_init_filters(); // set up the filters
+			}
+		}
+	} else {
+		if ( get_option('comment_registration') || 'private' == $status )
+			$error_comment['error'] = wp_die( 'Ошибка: Вы должны зарегистрироваться или войти, чтобы оставлять комментарии.' );
+	}
+
+	$comment_type = '';
+
+	if ( get_option('require_name_email') && !$user->exists() ) {
+		if ( 6 > strlen($comment_author_email) || '' == $comment_author ){
+			$error_comment['error'] = wp_die( 'Ошибка: заполните необходимые поля (Имя, Email).' );
+		}elseif ( !is_email($comment_author_email)){
+			$error_comment['error'] = wp_die( 'Ошибка: введенный вами email некорректный.' );
+		}
+	}
+	
+	if ( '' == trim($comment_content) ||  '<p><br></p>' == $comment_content ){
+		$error_comment['error'] = wp_die( 'Ошибка: Вы забыли про комментарий.' );
+	}
+
+	wp_json_encode($error_comment);
+
+	$comment_parent = isset($_POST['comment_parent']) ? absint($_POST['comment_parent']) : 0;
+	$commentdata = compact('comment_post_ID', 'comment_author', 'comment_author_email', 'comment_author_url', 'comment_content', 'comment_type', 'comment_parent', 'user_ID');
+	$comment_id = wp_new_comment( $commentdata );
+	$comment = get_comment($comment_id);
+
+	die();
+}
+add_action('wp_ajax_ajaxcomments', 'true_add_ajax_comment');
+add_action('wp_ajax_nopriv_ajaxcomments', 'true_add_ajax_comment');
+
+//short code list comment
+function reviews_list( $atts ) {               
+	define( 'DEFAULT_COMMENTS_PER_PAGE', $GLOBALS['wp_query']->query_vars['comments_per_page']);
+
+	$page = (get_query_var('page')) ? get_query_var('page') : 1;
+
+	$limit = DEFAULT_COMMENTS_PER_PAGE;
+
+	$offset = ($page * $limit) - $limit;
+
+	$param = array(
+		'status'	=> 'approve',
+		'offset'	=> $offset,
+		'number'	=> $limit
+	);
+
+	$total_comments = get_comments(array(
+		'orderby' => 'comment_date',
+		'order'   => 'ASC',
+		'status'  => 'approve',
+		'parent'  => 0
+
+	));
+
+	$pages = ceil(count($total_comments)/DEFAULT_COMMENTS_PER_PAGE);
+
+	$comments = get_comments( $param );
+
+	$args = array(
+		'base'         => @add_query_arg('page','%#%'),
+		'format'       => '?page=%#%',
+		'total'        => $pages,
+		'current'      => $page,
+		'show_all'     => false,
+		'mid_size'     => 4,
+		'prev_next'    => false,
+		'prev_text'    => __('&laquo; В начало'),
+		'next_text'    => __('В конец &raquo;'),
+		'type' => 'array'
+	);
+	
+	ob_start();
+	
+	if($comments){
+		foreach($comments as $comment){
+			$author = $comment->comment_author;
+			$descr = strip_tags( $comment->comment_content );
+			global $cnum;
+	
+			// определяем первый номер, если включено разделение на страницы
+	
+			$per_page = $limit;
+	
+			if( $per_page && !isset($cnum) ){
+				$com_page = $page;
+				if($com_page>1)
+					$cnum = ($com_page-1)*(int)$per_page;
+			}
+			// считаем
+			$cnum = isset($cnum) ? $cnum+1 : 1;
+	?>
+	<div class="reviews">
+		<div>
+			<span><?php echo $author; ?></span><span><?php comment_date( 'd.m.y', $comment->comment_ID ); ?></span>
+			<p><?php echo $descr; ?></p>
+		</div>
+	</div>
+	<?php
+		}
+	}
+	?>
+	<div class="paggination">
+		<?php $pagination = paginate_links($args);
+			
+		if($pagination){
+		?>
+		<ul class="list-pages">
+			<?php foreach ($pagination as $pag){ ?>
+				<li><?php echo $pag; ?></li>
+			<?php } ?>
+		</ul>
+		<?php } ?>
+	</div>
+	<?php
+	$output = ob_get_contents();
+    ob_end_clean();
+	return $output;
+}
+add_shortcode( 'reviews_list', 'reviews_list' );

@@ -181,6 +181,12 @@ function imagify_sanitize_context( $context ) {
  * @param string $class Name of the class to include.
  */
 function imagify_autoload( $class ) {
+	static $strtolower;
+
+	if ( ! isset( $strtolower ) ) {
+		$strtolower = function_exists( 'mb_strtolower' ) ? 'mb_strtolower' : 'strtolower';
+	}
+
 	// Generic classes.
 	$classes = array(
 		'Imagify_Abstract_Attachment'         => 1,
@@ -191,6 +197,7 @@ function imagify_autoload( $class ) {
 		'Imagify_Admin_Ajax_Post'             => 1,
 		'Imagify_Assets'                      => 1,
 		'Imagify_Attachment'                  => 1,
+		'Imagify_Auto_Optimization'           => 1,
 		'Imagify_Cron_Library_Size'           => 1,
 		'Imagify_Cron_Rating'                 => 1,
 		'Imagify_Cron_Sync_Files'             => 1,
@@ -218,7 +225,7 @@ function imagify_autoload( $class ) {
 	);
 
 	if ( isset( $classes[ $class ] ) ) {
-		$class = str_replace( '_', '-', strtolower( $class ) );
+		$class = str_replace( '_', '-', call_user_func( $strtolower, $class ) );
 		include IMAGIFY_CLASSES_PATH . 'class-' . $class . '.php';
 		return;
 	}
@@ -242,7 +249,7 @@ function imagify_autoload( $class ) {
 
 	if ( isset( $classes[ $class ] ) ) {
 		$folder = $classes[ $class ];
-		$class  = str_replace( '_', '-', strtolower( $class ) );
+		$class  = str_replace( '_', '-', call_user_func( $strtolower, $class ) );
 		include IMAGIFY_3RD_PARTY_PATH . $folder . '/inc/classes/class-' . $class . '.php';
 	}
 }
@@ -298,6 +305,10 @@ function imagify_get_external_url( $target, $query_args = array() ) {
 
 		case 'documentation':
 			$url = $site_url . 'documentation/';
+			break;
+
+		case 'documentation-imagick-gd':
+			$url = $site_url . 'documentation/solve-imagemagick-gd-required/';
 			break;
 
 		case 'register':

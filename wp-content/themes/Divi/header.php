@@ -16,6 +16,7 @@
 	<?php elegant_description(); ?>
 	<?php elegant_keywords(); ?>
 	<?php elegant_canonical(); ?>
+	
 
 
 	<?php do_action( 'et_head_meta' ); ?>
@@ -35,8 +36,6 @@
 	</script>
 
 	<?php wp_head(); ?>
-
-
 </head>
 <body <?php body_class(); ?>>
 
